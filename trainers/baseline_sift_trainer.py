@@ -224,7 +224,8 @@ class Trainer(BaseTrainer):
         # self.test_sift_rot()
 
         # count = 0
-        
+
+        pairs_path = []
         batch_ind = 0
         if os.path.isfile('mid_run/SIFT/outputs/debug_outrot.pkl') and True:
             try:
@@ -240,7 +241,8 @@ class Trainer(BaseTrainer):
                 pass
         for ind, data_full in enumerate(tqdm.tqdm(test_loader)):
             # if ind >10:
-            #     break
+            #     break            
+
             if ind<batch_ind:
                 continue            
             # count += 1
@@ -287,6 +289,9 @@ class Trainer(BaseTrainer):
             # else:                        
             #     out_rmat = compute_rotation_matrix_from_euler_angle(out_rotation_x.float(), out_rotation_y.float(), out_rotation_z.float(), batch_size)
             #     out_rmat1 = None
+
+            #list of all the pairs scene and image path, for analisys purpose 
+            pairs_path += [(scene,path1, path2) for scene, path1, path2 in zip(data_full['scene'],data_full['path'],data_full['path2'])]                
             
             if gt_rmat_array is None:
                 gt_rmat_array = gt_rmat
@@ -325,7 +330,8 @@ class Trainer(BaseTrainer):
             
             with open('mid_run/SIFT/outputs/debug_outrot.pkl','wb') as file:
                 pickle.dump({'our_rmat':out_rmat_array,'gt_rmat':gt_rmat_array,'batch_ind':ind,
-                             'overlap_amount_array':overlap_amount_array},
+                             'overlap_amount_array':overlap_amount_array,
+                             'pairs_path':pairs_path},
                  file)
         
         
@@ -336,6 +342,7 @@ class Trainer(BaseTrainer):
             res_error = evaluation_metric_rotation(out_rmat_array, gt_rmat_array)
         else:
             res_error = evaluation_metric_rotation(out_rmat_array, gt_rmat_array,overlap_amount_array)
+        
         if val_angle:
             angle_error = evaluation_metric_rotation_angle(out_rmat_array, gt_rmat_array, gt_rmat1_array, out_rmat1_array)
             res_error.update(angle_error)
@@ -351,11 +358,13 @@ class Trainer(BaseTrainer):
                 median = np.ma.median(v)
                 error_max = np.ma.max(v)
                 std = np.ma.std(v)
-                count_10 = (v<10).sum(axis=0) if (k=='rotation_geodesic_error' or k=='gt_angle') else (v.compressed()<10).sum(axis=0)
-                percent_10 = np.true_divide(count_10, v.shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(count_10, v.compressed().shape[0])
+                count_15 = (v<15).sum(axis=0) if (k=='rotation_geodesic_error' or k=='gt_angle') else (v.compressed()<15).sum(axis=0)
+                percent_15 = np.true_divide(count_15, v.shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(count_15, v.compressed().shape[0])
+                count_30 = (v<30).sum(axis=0) if (k=='rotation_geodesic_error' or k=='gt_angle') else (v.compressed()<30).sum(axis=0)
+                percent_30 = np.true_divide(count_30, v.shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(count_30, v.compressed().shape[0])
                 per_from_all = np.true_divide(v.shape[0], res_error["gt_angle"].shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(v.compressed().shape[0], res_error["gt_angle"].shape[0])
             all_res.update({k + '/mean': mean, k + '/median': median, k + '/max': error_max, k + '/std': std,
-                            k + '/10deg': percent_10,k + '/per_from_all': per_from_all})
+                            k + '/15deg': percent_15,k + '/30deg': percent_30,k + '/per_from_all': per_from_all})
         print("Validation Epoch:%d " % epoch, all_res)
         if save_pictures:
             if test_loader.dataset.data_type == "colmap":

@@ -30,8 +30,25 @@ def get_args():
     #                     help='The configuration file.')
     # parser.add_argument('--config', default='configs/SIFT/config_streatlearn.yaml', type=str,
     #                     help='The configuration file.')
-    parser.add_argument('--config', default='configs/SIFT/config_squares.yaml', type=str,
-                        help='The configuration file.')
+    # parser.add_argument('--config', default='configs/SIFT/config_squares.yaml', type=str,
+    #                     help='The configuration file.')
+    
+    # -----NEW DATASETS-----
+    # SIFT:
+    # parser.add_argument('--config', default='configs/SIFT/config_unified.yaml', type=str,
+    #                     help='The configuration file.')    
+    # parser.add_argument('--config', default='configs/SIFT/config_cambridge_final.yaml', type=str,
+    #                     help='The configuration file.')   
+    # LoFTR
+    # parser.add_argument('--config', default='configs/LoFTR/config_unified.yaml', type=str,
+    #                     help='The configuration file.')   
+    # parser.add_argument('--config', default='configs/LoFTR/config_cambridge_final.yaml', type=str,
+    #                     help='The configuration file.')     
+    # Extreme_Rotation
+    # parser.add_argument('--config', default='configs/Extreme_Rotation/config_unified.yaml', type=str,
+    #                     help='The configuration file.')  
+    parser.add_argument('--config', default='configs/Extreme_Rotation/config_cambridge_final.yaml', type=str,
+                        help='The configuration file.')         
     # parser.add_argument('--config', default='configs/LoFTR/config_cambridge.yaml', type=str,
     #                     help='The configuration file.')
     # parser.add_argument('--config', default='configs/LoFTR/config_streatlearn.yaml', type=str,
@@ -64,7 +81,7 @@ def get_args():
     parser.add_argument('--pretrained',default='pretrained/streetlearnT_cv_distribution.pt',type=str,
                         help="Pretrained cehckpoint")
     
-    parser.add_argument('--is_resume',default=False,type=str,
+    parser.add_argument('--is_resume',default=True,type=str,
                         help="Pretrained cehckpoint")
 
     parser.add_argument('--val_angle', default=False, action='store_true',

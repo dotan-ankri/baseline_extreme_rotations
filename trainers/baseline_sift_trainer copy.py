@@ -1,34 +1,18 @@
-from time import time
+
 import os
 import tqdm
 import torch
-import importlib
 import numpy as np
 from trainers.base_trainer import BaseTrainer
 from trainers.utils.loss_utils import *
 from evaluation.evaluation_metrics import *
-
-##for vit
-from matplotlib import pyplot as plt
-from scipy.spatial.transform import Rotation
 import torchvision.transforms as T
-import sys
-sys.path.append("../LoFTR/")
-sys.path.append("/ExtremeRotation_code/LoFTR")
-from copy import deepcopy
-t = time()
-from LoFTR.src.loftr import LoFTR, default_cfg
-loftr_time = time() - t
-print(f"\n\nLOFTR TIME: {loftr_time}\n\n")
-import itertools
 import cv2
 from utils.compute_utils_sift import compute_gt_rmat_colmap_sift, qvec2rotmat
-# from datasets.dataset_utils import get_crop_square_and_resize_image
 from PIL import Image
 import pickle
-from einops.einops import rearrange
 
-class Loftr_Baseline():
+class Sift_Baseline():
     def __init__(self,focal:float=1.0,cx:float=0.5,cy:float=0.5
                             ,skew:float=0,mx:float=1,my:float=1,
                             ransac_thr:float=5.0):
@@ -71,7 +55,7 @@ class Loftr_Baseline():
         dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
 
         return (src_pts, dst_pts)
-
+    
     def camera_intrinsic_matrix(self, f:float=1.0,cx:float=0.5,cy:float=0.5
                                 ,skew:float=0,mx:float=1,my:float=1)->np.array:
         """Build the intrinsic matrix of a camera
@@ -86,7 +70,7 @@ class Loftr_Baseline():
         
         K = np.array([[fx, skew, cx],
                     [0, fy, cy],
-                    [0, 0, 1]])
+                    [0, 0, 1]])        
         
         return K
     
@@ -102,7 +86,6 @@ class Loftr_Baseline():
             K1 = self.intrinsic_matrix_1
             K2 = self.intrinsic_matrix_2
             E = K2.transpose()@F[:3,:3]@K1
-            mask = mask.squeeze()
             nof_points, R, t, mask2  = cv2.recoverPose(E, src_pts[mask==1], dst_pts[mask==1])
             return R, mask
         else:
@@ -126,53 +109,40 @@ class Loftr_Baseline():
     
         return image_cv2
     
-    def get_batch_rmat(self, kp0,kp1,original_dim0,original_dim1,confidence,batch_indexes,data_full):
+    def get_batch_rmat(self, imgs1,imgs2,data_full):
         fl1 = data_full['fl1']
         fl2 = data_full['fl2']
         rotations = []
         angle_x, angle_y, angle_z = [],[],[]
-        batch_size = data_full['grayimg1'].shape[0]
-        for ind in range(batch_size):
-            rel_kp = batch_indexes== ind
-            kp0_i = kp0[rel_kp].cpu().numpy()
-            kp1_i = kp1[rel_kp].cpu().numpy()
-            conf_i = confidence[rel_kp].cpu().numpy()
-            h0, w0, resize_factor0 = original_dim0[ind]['h'], original_dim0[ind]['w'], original_dim0[ind]['resize_factor']
-            h1, w1, resize_factor1 = original_dim1[ind]['h'], original_dim1[ind]['w'], original_dim1[ind]['resize_factor']
-            
-            cx, cy = w0//2, h0//2
+        for ind,(img1, img2) in enumerate(zip(imgs1,imgs2)):
+            src_pts, dst_pts = self.get_matches(img1,img2)
+            h,w,_ = img1.shape
+            cx, cy = w//2, h//2
             self.intrinsic_matrix_1 = self.camera_intrinsic_matrix(f=fl1[0][ind].item(),cx=cx,cy=cy)
-
-            cx, cy = w1//2, h1//2
+            h,w,_ = img2.shape
+            cx, cy = w//2, h//2
             self.intrinsic_matrix_2 = self.camera_intrinsic_matrix(f=fl2[0][ind].item(),cx=cx,cy=cy)
-
-            rmat, map2 = self.evaluate_rotation_mat(resize_factor0*kp0_i[conf_i>0.9],resize_factor1*kp1_i[conf_i>0.9])
+            rmat, map2 = self.evaluate_rotation_mat(src_pts, dst_pts)
             rotations.append(rmat)
             # angle_x.append(ax)
             # angle_y.append(ay)
             # angle_z.append(az)
         return torch.tensor(np.array(rotations))        
-    
-    
-    def plot_kp(im1,im2,kp1,kp2,nof_lines):
-        nof_kp = kp1.shape[0]
-        h1,w1 = im1.shape
-        full_image = np.concatenate((im1,im2),axis=1)
-        # Assuming kp = [rows, cols]
-        # Assuming kp = [cols, rows]
-        kp2[:,0] += w1 
-        plt.imshow(full_image,cmap='gray')
-        indices = np.random.choice(np.arange(nof_kp), size=nof_lines, replace=False)
-        for idx in indices:
-            plt.plot([kp1[idx,0],kp2[idx,0]], [kp1[idx,1],kp2[idx,1]],color='red')
-        plt.savefig('/storage/dotanankri/ExtremeRotation_code/test_loftr_rot/debug/kp_matching.png')        
+    def get_eular_angles_from_rot(self, rot_mat):
+        if isinstance(rot_mat,list):
+            rot_mat = torch.tensor(rot_mat)
+        elif not torch.is_tensor(rot_mat):
+            rot_mat = torch.tensor(rot_mat).unsqueeze(axis=0)
+
+        ax, ay, az = compute_euler_angles_from_rotation_matrices(rot_mat)
+        return np.rad2deg(ax.cpu().numpy()), np.rad2deg(ay.cpu().numpy()), np.rad2deg(az.cpu().numpy())
 
 class Trainer(BaseTrainer):
     def __init__(self, cfg, args):
         self.cfg = cfg
         self.args = args
 
-        self.loftr_baseline = Loftr_Baseline()
+        self.sift_baseline = Sift_Baseline()
 
         # dn_lib = importlib.import_module(cfg.models.rotationnet.type)
         # self.rotation_net = dn_lib.RotationNet(cfg.models.rotationnet)
@@ -200,9 +170,9 @@ class Trainer(BaseTrainer):
         os.makedirs(os.path.join(cfg.save_dir, "checkpoints"), exist_ok=True)
         ###
         self.data_type = getattr(self.cfg.data,"data_type","panorama")
-        matcher = LoFTR(config=default_cfg)
-        matcher.load_state_dict(torch.load("LoFTR/outdoor_ds.ckpt")['state_dict'])
-        self.matcher = matcher.eval().cuda()
+        # matcher = LoFTR(config=default_cfg)
+        # matcher.load_state_dict(torch.load("/storage/hanibezalel/LoFTR/pretrained/outdoor_ds.ckpt")['state_dict'])
+        # self.matcher = matcher.eval().cuda()
         
         # self.segmodel = eval('SegFormer')(
         #     backbone='MiT-B3',
@@ -251,11 +221,14 @@ class Trainer(BaseTrainer):
         seg2_array= None
         all_res = {}
 
-                
+        # self.test_sift_rot()
+
+        # count = 0
+        
         batch_ind = 0
-        if os.path.isfile('mid_run/LoFTR/outputs/debug_outrot_loftr.pkl') and True:
+        if os.path.isfile('mid_run/SIFT/outputs/debug_outrot.pkl') and True:
             try:
-                with open('mid_run/LoFTR/outputs/debug_outrot_loftr.pkl','rb') as file:
+                with open('mid_run/SIFT/outputs/debug_outrot.pkl','rb') as file:
                     last_dict = pickle.load( file)
                 batch_ind =last_dict['batch_ind']+1
                 out_rmat_array = last_dict['our_rmat']
@@ -265,39 +238,18 @@ class Trainer(BaseTrainer):
             except:
                 batch_ind = 0
                 pass
-        pairs_path = []
+        
         for ind, data_full in enumerate(tqdm.tqdm(test_loader)):
+            # if ind >10:
+            #     break
             if ind<batch_ind:
                 continue            
             # count += 1
             # if count == 15:
-            #     break                        
+            #     break
+                        
             img1 =self. load_imag_batch(data_full['path'],list((data_full['image_height']).numpy()))
-            img2 =self. load_imag_batch(data_full['path2'],list((data_full['image_height']).numpy()))
-            
-            # Extracting the Resize factor
-            original_dim0 = []
-            original_dim1 = []
-            for ind, (im0,im1) in enumerate(zip(img1,img2)):
-                new_size0 =data_full['grayimg1'][ind].size(-1)
-                h0, w0 = im0.shape[:-1]
-                old_size0 = min([h0, w0])
-                original_dim0.append({'resize_factor':old_size0/new_size0,
-                                      'h':h0,'w':w0})
-
-                new_size1 =data_full['grayimg2'][ind].size(-1)
-                h1, w1 = im1.shape[:-1]
-                old_size1 = min([h1, w1])
-                original_dim1.append({'resize_factor':old_size1/new_size1,
-                                      'h':h1,'w':w1}) 
-
-            if 'mask1' in data_full:
-                batch = {'image0':  data_full['grayimg1'].cuda(), 'image1': data_full['grayimg2'].cuda(), 'mask0': data_full['mask1'].cuda(), 'mask1': data_full['mask2'].cuda()}
-            else:
-                batch = {'image0':  data_full['grayimg1'].cuda(), 'image1': data_full['grayimg2'].cuda()}
-                
-            
-
+            img2 =self. load_imag_batch(data_full['path2'],list((data_full['image_height']).numpy()))            
             ###
             if test_loader.dataset.data_type == "colmap":
                 q1 = data_full['q1']
@@ -310,7 +262,7 @@ class Trainer(BaseTrainer):
             
             batch_size = len(data_full['path'])
             if test_loader.dataset.data_type == "colmap":
-                gt_rmat =compute_gt_rmat_colmap_sift(q1,q2,batch_size)
+                gt_rmat = compute_gt_rmat_colmap_sift(q1,q2,batch_size)
                 
                 overlap_amount = data_full['overlap_amount']
                 if overlap_amount_array is None:
@@ -327,26 +279,16 @@ class Trainer(BaseTrainer):
                 gt_rmat = compute_gt_rmat(rotation_x1, rotation_y1, rotation_x2, rotation_y2, batch_size)
 
 
-            with torch.no_grad():
-                self.matcher(batch)
-            
-                image_feature_map1 = batch['feat_c0']
-                image_feature_map2 = batch['feat_c1']
-                height_feat = int(batch['image0'].shape[2]/8)
-                image_feature_map1= rearrange(image_feature_map1, 'b (h w) c -> b c h w', h= height_feat)
-                image_feature_map2= rearrange(image_feature_map2, 'b (h w) c -> b c h w', h= height_feat)
-                
-                kp0 = batch['mkpts0_f']
-                kp1 = batch['mkpts1_f']                
-                confidence = batch['mconf']
-                batch_indexes = batch['b_ids']
-
-            out_rmat = self.loftr_baseline.get_batch_rmat(kp0,kp1,original_dim0,original_dim1,confidence,batch_indexes,data_full)
+        
+            out_rmat = self.sift_baseline.get_batch_rmat(img1,img2,data_full)
             out_rmat1 = None
 
-            #list of all the pairs scene and image path, for analisys purpose 
-            pairs_path += [(scene,path1, path2) for scene, path1, path2 in zip(data_full['scene'],data_full['path'],data_full['path2'])]
-
+            # if self.rotation_parameterization:
+            #     out_rmat, out_rmat1 = compute_out_rmat(out_rotation_x, out_rotation_y, out_rotation_z, batch_size)
+            # else:                        
+            #     out_rmat = compute_rotation_matrix_from_euler_angle(out_rotation_x.float(), out_rotation_y.float(), out_rotation_z.float(), batch_size)
+            #     out_rmat1 = None
+            
             if gt_rmat_array is None:
                 gt_rmat_array = gt_rmat
             else:
@@ -382,31 +324,24 @@ class Trainer(BaseTrainer):
         
         
             
-            with open('mid_run/LoFTR/outputs/debug_outrot_loftr.pkl','wb') as file:
+            with open('mid_run/SIFT/outputs/debug_outrot.pkl','wb') as file:
                 pickle.dump({'our_rmat':out_rmat_array,'gt_rmat':gt_rmat_array,'batch_ind':ind,
-                             'overlap_amount_array':overlap_amount_array,
-                             'pairs_path':pairs_path},
+                             'overlap_amount_array':overlap_amount_array},
                  file)
         
         
+        # with open('debug_outrot.pkl','rb') as file:
+        #     out_rmat_array,gt_rmat_array =pickle.load( file)
         out_rmat_array = out_rmat_array.cuda()
         if overlap_amount_array is None:
             res_error = evaluation_metric_rotation(out_rmat_array, gt_rmat_array)
         else:
             res_error = evaluation_metric_rotation(out_rmat_array, gt_rmat_array,overlap_amount_array)
+        
         if val_angle:
             angle_error = evaluation_metric_rotation_angle(out_rmat_array, gt_rmat_array, gt_rmat1_array, out_rmat1_array)
             res_error.update(angle_error)
 
-        # # save N best examples 
-        # best_overlap_huge_idx = np.argmin(res_error['rotation_geodesic_error_overlap_huge'])
-        # best_overlap_large_idx = np.argmin(res_error['rotation_geodesic_error_overlap_large'])
-        # best_overlap_small_idx = np.argmin(res_error['rotation_geodesic_error_overlap_small'])
-        # best_overlap_none_small_idx = np.argmin(res_error['rotation_geodesic_error_overlap_none_small'])
-        # best_overlap_large_idx = np.argmin(res_error['rotation_geodesic_error_overlap_none_large'])
-        # overlap_huge_example = {'geodesic_error':res_error['rotation_geodesic_error'][best_overlap_huge_idx],
-        #                         'gt_rmat':res_error['gt_rmat'][best_overlap_huge_idx],
-        #                         'out_rmat':res_error['gt_rmat'][best_overlap_huge_idx]}
         # mean, median, max, std, 10deg
         for k, v in res_error.items():
             if v.size == 0:
@@ -418,13 +353,11 @@ class Trainer(BaseTrainer):
                 median = np.ma.median(v)
                 error_max = np.ma.max(v)
                 std = np.ma.std(v)
-                count_15 = (v<15).sum(axis=0) if (k=='rotation_geodesic_error' or k=='gt_angle') else (v.compressed()<15).sum(axis=0)
-                percent_15 = np.true_divide(count_15, v.shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(count_15, v.compressed().shape[0])
-                count_30 = (v<30).sum(axis=0) if (k=='rotation_geodesic_error' or k=='gt_angle') else (v.compressed()<30).sum(axis=0)
-                percent_30 = np.true_divide(count_30, v.shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(count_30, v.compressed().shape[0])
+                count_10 = (v<10).sum(axis=0) if (k=='rotation_geodesic_error' or k=='gt_angle') else (v.compressed()<10).sum(axis=0)
+                percent_10 = np.true_divide(count_10, v.shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(count_10, v.compressed().shape[0])
                 per_from_all = np.true_divide(v.shape[0], res_error["gt_angle"].shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(v.compressed().shape[0], res_error["gt_angle"].shape[0])
             all_res.update({k + '/mean': mean, k + '/median': median, k + '/max': error_max, k + '/std': std,
-                            k + '/15deg': percent_15,k + '/30deg': percent_30,k + '/per_from_all': per_from_all})
+                            k + '/10deg': percent_10,k + '/per_from_all': per_from_all})
         print("Validation Epoch:%d " % epoch, all_res)
         if save_pictures:
             if test_loader.dataset.data_type == "colmap":
@@ -433,7 +366,7 @@ class Trainer(BaseTrainer):
             
                 
         print("Validation Epoch:%d " % epoch, all_res)
-        self.write_dict_to_file(all_res,'mid_run/LoFTR/outputs/all_res_loftr.txt')
+        self.write_dict_to_file(all_res,'mid_run/SIFT/outputs/all_res.txt')
         return all_res
 
     def load_imag_batch(self,path_list,image_height):
@@ -442,13 +375,11 @@ class Trainer(BaseTrainer):
             with open(path, 'rb') as f:
                 img = Image.open(f)
                 img = img.convert('RGB')
-            img = self.loftr_baseline.get_crop_square_and_resize_image(img, img_size=height)
+            img = self.sift_baseline.get_crop_square_and_resize_image(img, img_size=height)
             images.append(img)
         return images
     def write_dict_to_file(self, dictionary, file_path):
         with open(file_path, 'w') as file:
             for key, value in dictionary.items():
                 file.write(f'{key} = {value}\n')
-    
-    
 

@@ -9,7 +9,7 @@ from evaluation.evaluation_metrics import *
 from utils.compute_utils import compute_gt_rmat_colmap, compute_angle_colmap
 
 import pickle
-# from testing_ground.absolute_rot.compare_absolute_angles import create_compare_dict
+from testing_ground.absolute_rot.compare_absolute_angles import create_compare_dict
 
 
 class Trainer(BaseTrainer):
@@ -201,7 +201,6 @@ class Trainer(BaseTrainer):
             except:
                 batch_ind = 0
                 pass
-        pairs_path = []
         for ind, data_full in enumerate(tqdm.tqdm(test_loader)):            
             # if ind > 10:
             #     break
@@ -271,18 +270,16 @@ class Trainer(BaseTrainer):
                 _, out_rotation_y = self.rotation_net_y(pairwise_feature)
                 _, out_rotation_z = self.rotation_net_z(pairwise_feature)
                 if self.rotation_parameterization:
-                    # if ind==100:
-                    #     compare_dict_list = create_compare_dict(out_rotation_x,out_rotation_y,out_rotation_z,angle_x,angle_y,angle_z)
-                    #     with open('testing_ground/absolute_rot/compare_data_list_cambridge.pkl','wb') as file:
-                    #         pickle.dump({'compare_dict_list':compare_dict_list,
-                    #                     'path1':data_full['path'],
-                    #                     'path2':data_full['path2']},file)
+                    if ind==100:
+                        compare_dict_list = create_compare_dict(out_rotation_x,out_rotation_y,out_rotation_z,angle_x,angle_y,angle_z)
+                        with open('testing_ground/absolute_rot/compare_data_list_cambridge.pkl','wb') as file:
+                            pickle.dump({'compare_dict_list':compare_dict_list,
+                                        'path1':data_full['path'],
+                                        'path2':data_full['path2']},file)
                     out_rmat, out_rmat1 = compute_out_rmat(out_rotation_x, out_rotation_y, out_rotation_z, batch_size)
                 else:                        
                     out_rmat, out_rmat1 = compute_out_rmat_from_euler(out_rotation_x, out_rotation_y, out_rotation_z, batch_size)
             
-            #list of all the pairs scene and image path, for analisys purpose 
-            pairs_path += [(scene,path1, path2) for scene, path1, path2 in zip(data_full['scene'],data_full['path'],data_full['path2'])]                
             if gt_rmat_array is None:
                 gt_rmat_array = gt_rmat
             else:
@@ -320,8 +317,7 @@ class Trainer(BaseTrainer):
             
             with open('mid_run/extreme_rotation/outputs/debug_outrot.pkl','wb') as file:
                 pickle.dump({'our_rmat':out_rmat_array,'gt_rmat':gt_rmat_array,'batch_ind':ind,
-                             'overlap_amount_array':overlap_amount_array,
-                             'pairs_path':pairs_path},
+                             'overlap_amount_array':overlap_amount_array},
                  file)
         
         
@@ -347,13 +343,11 @@ class Trainer(BaseTrainer):
                 median = np.ma.median(v)
                 error_max = np.ma.max(v)
                 std = np.ma.std(v)
-                count_15 = (v<15).sum(axis=0) if (k=='rotation_geodesic_error' or k=='gt_angle') else (v.compressed()<15).sum(axis=0)
-                percent_15 = np.true_divide(count_15, v.shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(count_15, v.compressed().shape[0])
-                count_30 = (v<30).sum(axis=0) if (k=='rotation_geodesic_error' or k=='gt_angle') else (v.compressed()<30).sum(axis=0)
-                percent_30 = np.true_divide(count_30, v.shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(count_30, v.compressed().shape[0])
+                count_10 = (v<10).sum(axis=0) if (k=='rotation_geodesic_error' or k=='gt_angle') else (v.compressed()<10).sum(axis=0)
+                percent_10 = np.true_divide(count_10, v.shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(count_10, v.compressed().shape[0])
                 per_from_all = np.true_divide(v.shape[0], res_error["gt_angle"].shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(v.compressed().shape[0], res_error["gt_angle"].shape[0])
             all_res.update({k + '/mean': mean, k + '/median': median, k + '/max': error_max, k + '/std': std,
-                            k + '/15deg': percent_15,k + '/30deg': percent_30,k + '/per_from_all': per_from_all})
+                            k + '/10deg': percent_10,k + '/per_from_all': per_from_all})
         print("Validation Epoch:%d " % epoch, all_res)
         if save_pictures:
             if test_loader.dataset.data_type == "colmap":

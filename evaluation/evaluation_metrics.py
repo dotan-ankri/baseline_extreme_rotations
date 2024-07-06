@@ -7,14 +7,15 @@ def evaluation_metric_rotation(predict_rotation, gt_rotation,overlap_amount_arra
     gt_distance = compute_angle_from_r_matrices(gt_rotation.view(-1, 3, 3))
     gt_distance = gt_distance.cpu().numpy()
     if overlap_amount_array is not None:
-        #geodesic_loss_overlap_none = geodesic_loss[np.asarray(overlap_amount_array) == "none"]
+        # geodesic_loss_overlap_none = geodesic_loss[np.asarray(overlap_amount_array) == "none"]
         #geodesic_loss_overlap_large = geodesic_loss[np.asarray(overlap_amount_array) == "large"]
         #geodesic_loss_overlap_small = geodesic_loss[np.asarray(overlap_amount_array) == "small"]
-        geodesic_loss_overlap_none_small = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(np.asarray(overlap_amount_array) == "none_small"))
-        geodesic_loss_overlap_none_large = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(np.asarray(overlap_amount_array) == "none_large"))
+        # geodesic_loss_overlap_none_small = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(np.asarray(overlap_amount_array) == "none_small"))
+        # geodesic_loss_overlap_none_large = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(np.asarray(overlap_amount_array) == "none_large"))
         #geodesic_loss_overlap_none = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(np.asarray(overlap_amount_array) == "none"))
+        geodesic_loss_overlap_none = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(np.asarray(overlap_amount_array) == "none"))
         geodesic_loss_overlap_large = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(np.asarray(overlap_amount_array) == "large"))
-        geodesic_loss_overlap_huge = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(np.asarray(overlap_amount_array) == "huge"))
+        # geodesic_loss_overlap_huge = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(np.asarray(overlap_amount_array) == "huge"))
         geodesic_loss_overlap_small = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(np.asarray(overlap_amount_array) == "small"))
         geodesic_loss = geodesic_loss.cpu().numpy()
     else:
@@ -22,20 +23,21 @@ def evaluation_metric_rotation(predict_rotation, gt_rotation,overlap_amount_arra
         #geodesic_loss_overlap_large = geodesic_loss[gt_distance.view(-1) < (pi / 4)]
         #geodesic_loss_overlap_small = geodesic_loss[(gt_distance.view(-1) >= pi / 4) & (gt_distance.view(-1) < pi / 2)]
     ###
-        geodesic_loss_overlap_huge = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(gt_distance < (pi / 8)))
-        geodesic_loss_overlap_none_small = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(gt_distance > (pi / 2)))
-        geodesic_loss_overlap_none_large = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(gt_distance > (pi / 2)))
+        # geodesic_loss_overlap_huge = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(gt_distance < (pi / 8)))
+        # geodesic_loss_overlap_none_small = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(gt_distance > (pi / 2)))
+        # geodesic_loss_overlap_none_large = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(gt_distance > (pi / 2)))
+        geodesic_loss_overlap_none = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not(gt_distance > (pi / 2)))
         geodesic_loss_overlap_large = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not((gt_distance < pi / 4) & (gt_distance >= pi / 8)))
         geodesic_loss_overlap_small = np.ma.masked_array(geodesic_loss.cpu().numpy(), np.logical_not((gt_distance >= pi / 4) & (gt_distance < pi / 2)))
         geodesic_loss = geodesic_loss.cpu().numpy()
     res_error = {
         "gt_angle": gt_distance / pi * 180,
-        "rotation_geodesic_error_overlap_huge": geodesic_loss_overlap_huge,
+        # "rotation_geodesic_error_overlap_huge": geodesic_loss_overlap_huge,
         "rotation_geodesic_error_overlap_large": geodesic_loss_overlap_large,
         "rotation_geodesic_error_overlap_small": geodesic_loss_overlap_small,
-        "rotation_geodesic_error_overlap_none_small": geodesic_loss_overlap_none_small,
-        "rotation_geodesic_error_overlap_none_large": geodesic_loss_overlap_none_large,
-        #"rotation_geodesic_error_overlap_none": geodesic_loss_overlap_none,
+        # "rotation_geodesic_error_overlap_none_small": geodesic_loss_overlap_none_small,
+        # "rotation_geodesic_error_overlap_none_large": geodesic_loss_overlap_none_large,
+        "rotation_geodesic_error_overlap_none": geodesic_loss_overlap_none,
         # "rotation_geodesic_error": geodesic_loss,
         # "gt_rmat":gt_rotation,
         # "out_rmat":predict_rotation

@@ -265,7 +265,6 @@ class Trainer(BaseTrainer):
             except:
                 batch_ind = 0
                 pass
-        pairs_path = []
         for ind, data_full in enumerate(tqdm.tqdm(test_loader)):
             if ind<batch_ind:
                 continue            
@@ -344,9 +343,7 @@ class Trainer(BaseTrainer):
             out_rmat = self.loftr_baseline.get_batch_rmat(kp0,kp1,original_dim0,original_dim1,confidence,batch_indexes,data_full)
             out_rmat1 = None
 
-            #list of all the pairs scene and image path, for analisys purpose 
-            pairs_path += [(scene,path1, path2) for scene, path1, path2 in zip(data_full['scene'],data_full['path'],data_full['path2'])]
-
+            
             if gt_rmat_array is None:
                 gt_rmat_array = gt_rmat
             else:
@@ -384,8 +381,7 @@ class Trainer(BaseTrainer):
             
             with open('mid_run/LoFTR/outputs/debug_outrot_loftr.pkl','wb') as file:
                 pickle.dump({'our_rmat':out_rmat_array,'gt_rmat':gt_rmat_array,'batch_ind':ind,
-                             'overlap_amount_array':overlap_amount_array,
-                             'pairs_path':pairs_path},
+                             'overlap_amount_array':overlap_amount_array},
                  file)
         
         
@@ -418,13 +414,11 @@ class Trainer(BaseTrainer):
                 median = np.ma.median(v)
                 error_max = np.ma.max(v)
                 std = np.ma.std(v)
-                count_15 = (v<15).sum(axis=0) if (k=='rotation_geodesic_error' or k=='gt_angle') else (v.compressed()<15).sum(axis=0)
-                percent_15 = np.true_divide(count_15, v.shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(count_15, v.compressed().shape[0])
-                count_30 = (v<30).sum(axis=0) if (k=='rotation_geodesic_error' or k=='gt_angle') else (v.compressed()<30).sum(axis=0)
-                percent_30 = np.true_divide(count_30, v.shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(count_30, v.compressed().shape[0])
+                count_10 = (v<10).sum(axis=0) if (k=='rotation_geodesic_error' or k=='gt_angle') else (v.compressed()<10).sum(axis=0)
+                percent_10 = np.true_divide(count_10, v.shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(count_10, v.compressed().shape[0])
                 per_from_all = np.true_divide(v.shape[0], res_error["gt_angle"].shape[0]) if (k=='rotation_geodesic_error' or k=='gt_angle') else np.true_divide(v.compressed().shape[0], res_error["gt_angle"].shape[0])
             all_res.update({k + '/mean': mean, k + '/median': median, k + '/max': error_max, k + '/std': std,
-                            k + '/15deg': percent_15,k + '/30deg': percent_30,k + '/per_from_all': per_from_all})
+                            k + '/10deg': percent_10,k + '/per_from_all': per_from_all})
         print("Validation Epoch:%d " % epoch, all_res)
         if save_pictures:
             if test_loader.dataset.data_type == "colmap":
